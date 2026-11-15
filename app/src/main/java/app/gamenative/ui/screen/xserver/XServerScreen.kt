@@ -560,6 +560,7 @@ fun XServerScreen(
         onDispose {
             CursorAutoHide.detach()
             ControllerShortcuts.reset()
+            app.gamenative.ui.screen.wow.WowLab.stopBench()
         }
     }
     val clickHighlightPoints = remember { mutableStateListOf<app.gamenative.ui.component.HighlightPoint>() }
@@ -2556,6 +2557,12 @@ fun XServerScreen(
             frameRating = FrameRating(context)
             frameRating?.setVisibility(View.GONE)
             xServerView.renderer.setFrameRating(frameRating)
+            // No-op unless the WoW test menu armed a bench log for this launch.
+            app.gamenative.ui.screen.wow.WowLab.startBench(
+                context,
+                fps = { frameRating?.currentFPS ?: 0f },
+                frameTimeP99Ms = { frameRating?.getFramePercentileMs(0.99) ?: 0 },
+            )
 
             if (isPerformanceHudEnabled) {
                 frameLayout.post {

@@ -48,6 +48,13 @@ public class PulseAudioComponent extends EnvironmentComponent {
     private static final String PIPE_SOURCE_MODULE = "module-pipe-source.so";
     private static final String MIC_FIFO_NAME = "mic.fifo";
 
+    /**
+     * When set, PulseAudio runs at 48 kHz (what Android's outputs use) with a better resampler. Stock
+     * PulseAudio defaults to 44.1 kHz and speex-float-1, so 48 kHz game audio is resampled twice, once
+     * with a low-quality filter. Set by the launcher before the environment starts.
+     */
+    public static volatile boolean highQualityAudio = false;
+
     private float volume = 1.0f;
     private byte performanceMode = 1;
     private final AtomicBoolean isPauseResumeRunning = new AtomicBoolean(false);
@@ -193,6 +200,17 @@ public class PulseAudioComponent extends EnvironmentComponent {
         File configDir = new File(workingDir, "/.config");
         if (configDir.exists()) {
             FileUtils.delete(configDir);
+        }
+        if (highQualityAudio) {
+            // PulseAudio reads $HOME/.config/pulse/daemon.conf; HOME is workingDir (see envVars below).
+            File daemonConf = new File(configDir, "pulse/daemon.conf");
+            daemonConf.getParentFile().mkdirs();
+            FileUtils.writeString(daemonConf, String.join("\n",
+                    "default-sample-format = float32le",
+                    "default-sample-rate = 48000",
+                    "alternate-sample-rate = 44100",
+                    "resample-method = speex-float-5",
+                    "avoid-resampling = yes"));
         }
 
         File configFile = new File(workingDir, "default.pa");

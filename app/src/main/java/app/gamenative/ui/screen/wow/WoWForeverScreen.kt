@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -106,6 +107,8 @@ fun WoWForeverScreen(
     var hasSavedLogin by remember { mutableStateOf(BattleNetSignIn.load(context) != null) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
+    var labUnlocked by remember { mutableStateOf(WowLab.load(context).unlocked) }
+    var buildTaps by remember { mutableStateOf(0) }
     var showLoginDialog by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -473,15 +476,27 @@ fun WoWForeverScreen(
                             label = if (hasSavedLogin) "Battle.net Login (Configured)" else "Battle.net Login (Configure below play button)",
                             ready = hasSavedLogin,
                         )
-                        appUpdate?.let {
-                            CheckItem(
-                                label = "App Build: v${BuildConfig.VERSION_NAME} (v${it.version} available)",
-                                ready = false,
+                        // Seven taps on the build line unlock the test menu, like Android's developer options.
+                        Box(
+                            modifier = Modifier.clickable {
+                                buildTaps++
+                                if (buildTaps >= 7 && !labUnlocked) {
+                                    WowLab.save(context, WowLab.load(context).copy(unlocked = true))
+                                    labUnlocked = true
+                                    SnackbarManager.show("Test menu unlocked")
+                                }
+                            },
+                        ) {
+                            appUpdate?.let {
+                                CheckItem(
+                                    label = "App Build: v${BuildConfig.VERSION_NAME} (v${it.version} available)",
+                                    ready = false,
+                                )
+                            } ?: CheckItem(
+                                label = "App Build: v${BuildConfig.VERSION_NAME}",
+                                ready = true,
                             )
-                        } ?: CheckItem(
-                            label = "App Build: v${BuildConfig.VERSION_NAME}",
-                            ready = true,
-                        )
+                        }
                         versionStatus?.let { version ->
                             CheckItem(
                                 label = if (version.isOutdated) {
@@ -511,6 +526,16 @@ fun WoWForeverScreen(
                         OptionMenu("Resolution: ${resolution.label}", Icons.Default.AspectRatio, RenderResolution.entries, resolution, { it.label }, !isLaunching) {
                             RenderResolution.save(context, it)
                             resolution = it
+                        }
+                    }
+
+                    if (labUnlocked) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = Color(0xFF1E2D44))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        WowLabCard(gamePath, gpu.driver, gpu.tuDebug, enabled = !isLaunching) {
+                            labUnlocked = false
+                            buildTaps = 0
                         }
                     }
 
@@ -1224,6 +1249,10 @@ internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int
 
 private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, onStatus: (String) -> Unit): String {
     installBundledComponents(context, onStatus)
+    val lab = WowLab.active(context)
+    if (lab.unlocked) WowLab.importComponents(context, gameRoot, onStatus)
+    val containerId = WowLab.containerId(CONTAINER_ID, lab)
+    com.winlator.xenvironment.components.PulseAudioComponent.highQualityAudio = lab.hqAudio
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
     try {
@@ -1245,39 +1274,59 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 
     onStatus("Configuring ${gpu.label} container...")
     val containerManager = ContainerManager(context)
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context))
-    val container = containerManager.getContainerById(CONTAINER_ID)
+    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), lab, containerId)
+    val container = containerManager.getContainerById(containerId)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
-        containerManager.createContainer(CONTAINER_ID, config)
+        containerManager.createContainer(containerId, config)
     } else {
         container.loadData(config)
         container.saveData()
     }
-    check(containerManager.hasContainer(CONTAINER_ID)) { "Container creation failed. Check system storage and logs." }
+    check(containerManager.hasContainer(containerId)) { "Container creation failed. Check system storage and logs." }
+    WowLab.armBench(
+        dir = if (lab.bench) File(gameRoot, "${WowLab.DIR}/bench") else null,
+        header = listOf(
+            "device=${Build.MANUFACTURER} ${Build.MODEL} soc=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else Build.HARDWARE}",
+            "driver=${config.optString("graphicsDriverVersion")} screen=$screenSize",
+            "wine=${config.optString("wineVersion")} dxvk=${config.optString("dxwrapper")}",
+            "env=${config.optString("envVars")}",
+            "hq_audio=${lab.hqAudio}",
+        ),
+    )
     // Written last, so the password isn't on disk during the client download or container setup.
     BattleNetSignIn.load(context)?.let { login ->
         BattleNetSignIn.writeLoginFile(gameRoot, login)
         BattleNetSignIn.startLoginWatcher(gameRoot)
     }
-    return CONTAINER_ID
+    return containerId
 }
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
+private fun containerConfig(
+    gameRoot: File,
+    gpu: GpuProfile,
+    screenSize: String,
+    identity: WowMachineIdentity,
+    lab: WowLab.Settings,
+    containerId: String,
+): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+    val labEnv = lab.extraEnv.trim().takeIf { it.isNotEmpty() }?.let { " $it" }.orEmpty()
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${WowLab.tuDebug(gpu.tuDebug, lab.gmem)} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$labEnv"
+    val driver = lab.driver ?: gpu.driver
+    val dxvk = lab.dxvk ?: "$DXVK_VERSION-1"
     return JSONObject().apply {
-        put("id", CONTAINER_ID)
-        put("name", "WoW Forever")
+        put("id", containerId)
+        put("name", lab.proton?.let { "WoW Forever ($it)" } ?: "WoW Forever")
         put("screenSize", screenSize)
         put("envVars", envVars)
         put("graphicsDriver", "Wrapper")
-        put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        put("graphicsDriverVersion", driver)
+        put("graphicsDriverConfig", "version=$driver,adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
         put("displayRenderer", "vulkan")
-        put("dxwrapper", "dxvk-$DXVK_VERSION-1")
-        put("dxwrapperConfig", "version=$DXVK_VERSION-1")
-        put("wineVersion", "$PROTON_VERSION-1")
+        put("dxwrapper", "dxvk-$dxvk")
+        put("dxwrapperConfig", "version=$dxvk")
+        put("wineVersion", lab.proton ?: "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
         put("fexcoreVersion", "2609-0")
         put("drives", "D:/storage/emulated/0/DownloadE:/data/data/${BuildConfig.APPLICATION_ID}/storageG:${gameRoot.path}")
