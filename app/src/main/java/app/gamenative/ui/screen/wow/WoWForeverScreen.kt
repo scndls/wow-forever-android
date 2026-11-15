@@ -391,6 +391,13 @@ fun WoWForeverScreen(
                     checkAppUpdate()
                 }
             }
+            WoWLauncherState.shouldAutoLaunch && !WowLab.load(context).autoStart -> {
+                // "Start WoW when the app opens" is off: stay on the launcher screen.
+                WoWLauncherState.shouldAutoLaunch = false
+                PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
+                checkVersionStatus()
+                checkAppUpdate()
+            }
             !WoWLauncherState.shouldAutoLaunch -> {
                 checkVersionStatus()
                 checkAppUpdate()

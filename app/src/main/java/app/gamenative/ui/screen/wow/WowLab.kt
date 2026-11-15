@@ -50,6 +50,8 @@ internal object WowLab {
         val extraEnv: String = "",
         val bench: Boolean = false,
         val hqAudio: Boolean = true,
+        /** Boot straight into the game when the app opens (stock behaviour); off keeps the launcher screen up. */
+        val autoStart: Boolean = false,
     )
 
     fun load(context: Context): Settings {
@@ -62,6 +64,7 @@ internal object WowLab {
             extraEnv = p.getString("extraEnv", "") ?: "",
             bench = p.getBoolean("bench", false),
             hqAudio = p.getBoolean("hqAudio", true),
+            autoStart = p.getBoolean("autoStart", false),
         )
     }
 
@@ -74,6 +77,7 @@ internal object WowLab {
             .putString("extraEnv", s.extraEnv)
             .putBoolean("bench", s.bench)
             .putBoolean("hqAudio", s.hqAudio)
+            .putBoolean("autoStart", s.autoStart)
             .apply()
     }
 

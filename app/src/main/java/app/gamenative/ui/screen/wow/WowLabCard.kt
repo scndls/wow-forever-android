@@ -130,6 +130,15 @@ internal fun WowLabCard(gamePath: String, defaultDriver: String, defaultTuDebug:
         SwitchRow("High-quality audio", settings.hqAudio, enabled) { update(settings.copy(hqAudio = it)) }
         SwitchRow("Log FPS and temperatures", settings.bench, enabled) { update(settings.copy(bench = it)) }
 
+        SectionLabel("Launcher")
+        SwitchRow("Start WoW when the app opens", settings.autoStart, enabled) { update(settings.copy(autoStart = it)) }
+        Text(
+            "Controller: hold the home (logo) button and press D-pad up to open or close the keyboard.",
+            fontSize = 11.sp,
+            color = WowSubtle,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+
         SectionLabel("Expert")
         OutlinedTextField(
             value = settings.extraEnv,

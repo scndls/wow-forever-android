@@ -1591,6 +1591,9 @@ fun XServerScreen(
             var handled = false
             if (isGamepad && it.event != null) {
                 CursorAutoHide.onControllerMotion(it.event)
+                handled = ControllerShortcuts.onMotion(it.event)
+            }
+            if (isGamepad && it.event != null && !handled) {
                 val winHandler = xServerView!!.getxServer().winHandler
                 ControllerManager.getInstance().noteGamepadActivity(it.event)
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.device.id)
@@ -1937,16 +1940,24 @@ fun XServerScreen(
                 // (uses imeInputReceiver on external displays) but skips the
                 // 500ms post-delay used by the menu path — a gesture is already
                 // a direct touch interaction and should respond immediately.
-                // Shared by the "Show Keyboard" gesture and the controller's home + X chord.
-                ControllerShortcuts.onToggleKeyboard = toggle@{
-                    val anchor = PluviaApp.touchpadView ?: return@toggle
+                PluviaApp.touchpadView?.setShowKeyboardCallback {
+                    val anchor = PluviaApp.touchpadView ?: return@setShowKeyboardCallback
                     anchor.post {
                         if (anchor.windowToken == null) return@post
                         imeInputReceiver?.showKeyboard()
                             ?: imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
                     }
                 }
-                PluviaApp.touchpadView?.setShowKeyboardCallback { ControllerShortcuts.onToggleKeyboard?.invoke() }
+                // Controller home + D-pad up. Uses the Quick Menu's 500 ms delay: on Android 12+ an immediate
+                // toggle after a controller press can be ignored.
+                ControllerShortcuts.onToggleKeyboard = toggle@{
+                    val anchor = PluviaApp.touchpadView ?: return@toggle
+                    anchor.postDelayed({
+                        if (anchor.windowToken == null) return@postDelayed
+                        imeInputReceiver?.showKeyboard()
+                            ?: imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+                    }, if (Build.VERSION.SDK_INT > 29) 500L else 0L)
+                }
 
                 // Wire click highlight + gesture debug listener
                 PluviaApp.touchpadView?.setClickHighlightListener(object : com.winlator.widget.TouchpadView.ClickHighlightListener {
