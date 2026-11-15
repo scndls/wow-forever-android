@@ -1529,9 +1529,7 @@ fun XServerScreen(
             var handled = false
             if (isGamepad) {
                 CursorAutoHide.onControllerKey(it.event)
-                handled = ControllerShortcuts.onKey(it.event) { held ->
-                    PluviaApp.events.emit(AndroidEvent.KeyEvent(held)) { results -> results.any { r -> r } }
-                }
+                handled = ControllerShortcuts.onKey(it.event)
             }
             if (isGamepad && !handled) {
                 val winHandler = xServerView!!.getxServer().winHandler
@@ -1591,9 +1589,6 @@ fun XServerScreen(
             var handled = false
             if (isGamepad && it.event != null) {
                 CursorAutoHide.onControllerMotion(it.event)
-                handled = ControllerShortcuts.onMotion(it.event)
-            }
-            if (isGamepad && it.event != null && !handled) {
                 val winHandler = xServerView!!.getxServer().winHandler
                 ControllerManager.getInstance().noteGamepadActivity(it.event)
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.device.id)
@@ -1948,7 +1943,7 @@ fun XServerScreen(
                             ?: imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
                     }
                 }
-                // Controller home + D-pad up. Uses the Quick Menu's 500 ms delay: on Android 12+ an immediate
+                // Controller L3 + R3. Uses the Quick Menu's 500 ms delay: on Android 12+ an immediate
                 // toggle after a controller press can be ignored.
                 ControllerShortcuts.onToggleKeyboard = toggle@{
                     val anchor = PluviaApp.touchpadView ?: return@toggle
