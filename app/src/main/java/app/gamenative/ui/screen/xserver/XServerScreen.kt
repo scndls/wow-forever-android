@@ -557,7 +557,10 @@ fun XServerScreen(
     }
     DisposableEffect(Unit) {
         CursorAutoHide.attach { applyMouseCursorVisibility() }
-        onDispose { CursorAutoHide.detach() }
+        onDispose {
+            CursorAutoHide.detach()
+            ControllerShortcuts.reset()
+        }
     }
     val clickHighlightPoints = remember { mutableStateListOf<app.gamenative.ui.component.HighlightPoint>() }
     var debugGestureName by remember { mutableStateOf("") }
@@ -1525,6 +1528,11 @@ fun XServerScreen(
             var handled = false
             if (isGamepad) {
                 CursorAutoHide.onControllerKey(it.event)
+                handled = ControllerShortcuts.onKey(it.event) { held ->
+                    PluviaApp.events.emit(AndroidEvent.KeyEvent(held)) { results -> results.any { r -> r } }
+                }
+            }
+            if (isGamepad && !handled) {
                 val winHandler = xServerView!!.getxServer().winHandler
                 if (it.event.action == KeyEvent.ACTION_DOWN && it.event.repeatCount == 0 &&
                     ControllerManager.getInstance().noteGamepadButton(it.event.device.id)
@@ -1923,14 +1931,16 @@ fun XServerScreen(
                 // (uses imeInputReceiver on external displays) but skips the
                 // 500ms post-delay used by the menu path — a gesture is already
                 // a direct touch interaction and should respond immediately.
-                PluviaApp.touchpadView?.setShowKeyboardCallback {
-                    val anchor = PluviaApp.touchpadView ?: return@setShowKeyboardCallback
+                // Shared by the "Show Keyboard" gesture and the controller's home + X chord.
+                ControllerShortcuts.onToggleKeyboard = toggle@{
+                    val anchor = PluviaApp.touchpadView ?: return@toggle
                     anchor.post {
                         if (anchor.windowToken == null) return@post
                         imeInputReceiver?.showKeyboard()
                             ?: imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
                     }
                 }
+                PluviaApp.touchpadView?.setShowKeyboardCallback { ControllerShortcuts.onToggleKeyboard?.invoke() }
 
                 // Wire click highlight + gesture debug listener
                 PluviaApp.touchpadView?.setClickHighlightListener(object : com.winlator.widget.TouchpadView.ClickHighlightListener {
