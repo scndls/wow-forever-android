@@ -55,6 +55,7 @@ internal object WowLab {
     )
 
     fun load(context: Context): Settings {
+        applySettingsFile(context)
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return Settings(
             driver = p.getString("driver", null),
@@ -79,6 +80,29 @@ internal object WowLab {
             .putBoolean("hqAudio", s.hqAudio)
             .putBoolean("autoStart", s.autoStart)
             .apply()
+    }
+
+    /**
+     * Applies `<game folder>/lab/settings.json` once, then renames it to settings.applied.json. Lets
+     * settings be set from a computer (adb push) for benchmark rounds. Keys match [Settings]; a JSON
+     * null resets a choice to standard, a missing key leaves it as it is.
+     */
+    private fun applySettingsFile(context: Context) {
+        val file = runCatching { File(GamePath.load(context), "$DIR/settings.json") }.getOrNull() ?: return
+        if (!file.isFile) return
+        runCatching {
+            val json = JSONObject(file.readText())
+            val edit = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            listOf("driver", "gmem", "proton", "dxvk", "extraEnv").filter(json::has).forEach { key ->
+                if (json.isNull(key)) edit.remove(key) else edit.putString(key, json.getString(key))
+            }
+            listOf("bench", "hqAudio", "autoStart").filter(json::has).forEach { key ->
+                edit.putBoolean(key, json.getBoolean(key))
+            }
+            edit.apply()
+            file.renameTo(File(file.parentFile, "settings.applied.json"))
+            Timber.i("Test menu: applied %s", file)
+        }.onFailure { Timber.e(it, "Test menu: can't apply %s", file) }
     }
 
     // --- Components ---------------------------------------------------------------------------------
