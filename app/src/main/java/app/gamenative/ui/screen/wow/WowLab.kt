@@ -27,8 +27,8 @@ import timber.log.Timber
  * without rebuilding the app, and for logging frame rate and temperatures so setups can be compared.
  *
  * New components are dropped into `<game folder>/lab/drivers` (AdrenoTools .zip with meta.json at the
- * root), `lab/proton` and `lab/dxvk` (.wcp) and install on the next Play. While the lab is locked, or
- * every choice is on its default, launches are exactly the stock ones.
+ * root), `lab/proton` and `lab/dxvk` (.wcp) and install on the next Play. With every graphics choice on
+ * its default, launches use the stock components; only the audio fix is on by default.
  */
 internal object WowLab {
     const val DIR = "lab"
@@ -43,33 +43,30 @@ internal object WowLab {
     }
 
     data class Settings(
-        val unlocked: Boolean = false,
         val driver: String? = null,
         val gmem: Gmem = Gmem.AUTO,
         val proton: String? = null,
         val dxvk: String? = null,
         val extraEnv: String = "",
         val bench: Boolean = false,
-        val hqAudio: Boolean = false,
+        val hqAudio: Boolean = true,
     )
 
     fun load(context: Context): Settings {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return Settings(
-            unlocked = p.getBoolean("unlocked", false),
             driver = p.getString("driver", null),
             gmem = runCatching { Gmem.valueOf(p.getString("gmem", null) ?: "") }.getOrDefault(Gmem.AUTO),
             proton = p.getString("proton", null),
             dxvk = p.getString("dxvk", null),
             extraEnv = p.getString("extraEnv", "") ?: "",
             bench = p.getBoolean("bench", false),
-            hqAudio = p.getBoolean("hqAudio", false),
+            hqAudio = p.getBoolean("hqAudio", true),
         )
     }
 
     fun save(context: Context, s: Settings) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean("unlocked", s.unlocked)
             .putString("driver", s.driver)
             .putString("gmem", s.gmem.name)
             .putString("proton", s.proton)
@@ -79,9 +76,6 @@ internal object WowLab {
             .putBoolean("hqAudio", s.hqAudio)
             .apply()
     }
-
-    /** The settings a launch should use: the saved ones once unlocked, stock defaults otherwise. */
-    fun active(context: Context): Settings = load(context).takeIf { it.unlocked } ?: Settings()
 
     // --- Components ---------------------------------------------------------------------------------
 

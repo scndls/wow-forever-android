@@ -9,7 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -107,8 +106,6 @@ fun WoWForeverScreen(
     var hasSavedLogin by remember { mutableStateOf(BattleNetSignIn.load(context) != null) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
-    var labUnlocked by remember { mutableStateOf(WowLab.load(context).unlocked) }
-    var buildTaps by remember { mutableStateOf(0) }
     var showLoginDialog by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -476,27 +473,15 @@ fun WoWForeverScreen(
                             label = if (hasSavedLogin) "Battle.net Login (Configured)" else "Battle.net Login (Configure below play button)",
                             ready = hasSavedLogin,
                         )
-                        // Seven taps on the build line unlock the test menu, like Android's developer options.
-                        Box(
-                            modifier = Modifier.clickable {
-                                buildTaps++
-                                if (buildTaps >= 7 && !labUnlocked) {
-                                    WowLab.save(context, WowLab.load(context).copy(unlocked = true))
-                                    labUnlocked = true
-                                    SnackbarManager.show("Test menu unlocked")
-                                }
-                            },
-                        ) {
-                            appUpdate?.let {
-                                CheckItem(
-                                    label = "App Build: v${BuildConfig.VERSION_NAME} (v${it.version} available)",
-                                    ready = false,
-                                )
-                            } ?: CheckItem(
-                                label = "App Build: v${BuildConfig.VERSION_NAME}",
-                                ready = true,
+                        appUpdate?.let {
+                            CheckItem(
+                                label = "App Build: v${BuildConfig.VERSION_NAME} (v${it.version} available)",
+                                ready = false,
                             )
-                        }
+                        } ?: CheckItem(
+                            label = "App Build: v${BuildConfig.VERSION_NAME}",
+                            ready = true,
+                        )
                         versionStatus?.let { version ->
                             CheckItem(
                                 label = if (version.isOutdated) {
@@ -529,15 +514,10 @@ fun WoWForeverScreen(
                         }
                     }
 
-                    if (labUnlocked) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color(0xFF1E2D44))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        WowLabCard(gamePath, gpu.driver, gpu.tuDebug, enabled = !isLaunching) {
-                            labUnlocked = false
-                            buildTaps = 0
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = Color(0xFF1E2D44))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    WowLabCard(gamePath, gpu.driver, gpu.tuDebug, enabled = !isLaunching)
 
                     longUptimeDays()?.let { days ->
                         Spacer(modifier = Modifier.height(10.dp))
@@ -1249,8 +1229,8 @@ internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int
 
 private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, onStatus: (String) -> Unit): String {
     installBundledComponents(context, onStatus)
-    val lab = WowLab.active(context)
-    if (lab.unlocked) WowLab.importComponents(context, gameRoot, onStatus)
+    val lab = WowLab.load(context)
+    WowLab.importComponents(context, gameRoot, onStatus)
     val containerId = WowLab.containerId(CONTAINER_ID, lab)
     com.winlator.xenvironment.components.PulseAudioComponent.highQualityAudio = lab.hqAudio
 

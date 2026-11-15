@@ -29,10 +29,12 @@ import app.gamenative.ui.theme.WowSubtle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** The unlocked test menu. Choices are saved right away and apply on the next Play. */
+/** The Advanced section (drivers, audio, benchmark). Choices are saved right away and apply on the next Play. */
 @Composable
-internal fun WowLabCard(gamePath: String, defaultDriver: String, defaultTuDebug: String, enabled: Boolean, onHide: () -> Unit) {
+internal fun WowLabCard(gamePath: String, defaultDriver: String, defaultTuDebug: String, enabled: Boolean) {
     val context = LocalContext.current
+    val uiPrefs = remember { context.getSharedPreferences("wow_forever_lab_ui", android.content.Context.MODE_PRIVATE) }
+    var expanded by remember { mutableStateOf(uiPrefs.getBoolean("expanded", false)) }
     var settings by remember { mutableStateOf(WowLab.load(context)) }
     var drivers by remember { mutableStateOf(emptyList<String>()) }
     var protons by remember { mutableStateOf(emptyList<String>()) }
@@ -50,7 +52,19 @@ internal fun WowLabCard(gamePath: String, defaultDriver: String, defaultTuDebug:
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("TEST MENU", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = WowGold)
+        TextButton(onClick = {
+            expanded = !expanded
+            uiPrefs.edit().putBoolean("expanded", expanded).apply()
+        }) {
+            Text(
+                (if (expanded) "▾ " else "▸ ") + "ADVANCED: DRIVERS, AUDIO, BENCHMARK",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = WowGold,
+            )
+        }
+        if (!expanded) return@Column
         Text(
             "New drivers (.zip) go in $gamePath/${WowLab.DIR}/drivers, Proton and DXVK (.wcp) in " +
                 "${WowLab.DIR}/proton and ${WowLab.DIR}/dxvk. They install on the next Play; changes apply then too.",
@@ -85,16 +99,8 @@ internal fun WowLabCard(gamePath: String, defaultDriver: String, defaultTuDebug:
             Checkbox(checked = settings.bench, onCheckedChange = { update(settings.copy(bench = it)) }, enabled = enabled)
             Text("Log FPS and temperatures to ${WowLab.DIR}/bench", fontSize = 12.sp, color = WowMuted)
         }
-        Row {
-            TextButton(onClick = { update(WowLab.Settings(unlocked = true)) }, enabled = enabled) {
-                Text("Reset to defaults", fontSize = 12.sp, color = WowMuted)
-            }
-            TextButton(onClick = {
-                update(settings.copy(unlocked = false))
-                onHide()
-            }, enabled = enabled) {
-                Text("Hide test menu", fontSize = 12.sp, color = WowMuted)
-            }
+        TextButton(onClick = { update(WowLab.Settings()) }, enabled = enabled) {
+            Text("Reset to defaults", fontSize = 12.sp, color = WowMuted)
         }
     }
 }
