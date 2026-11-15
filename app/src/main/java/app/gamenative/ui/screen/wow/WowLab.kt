@@ -37,9 +37,9 @@ internal object WowLab {
     private const val BENCH_INTERVAL_MS = 2000L
 
     enum class Gmem(val label: String) {
-        AUTO("Auto (device default)"),
-        ON("On: tiled GMEM rendering"),
-        OFF("Off: sysmem rendering"),
+        AUTO("Standard"),
+        ON("On"),
+        OFF("Off"),
     }
 
     data class Settings(
