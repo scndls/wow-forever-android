@@ -187,6 +187,8 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         default void onGestureTriggered(String gestureName) {}
     }
     private ClickHighlightListener clickHighlightListener;
+    /** Runs on every touch or mouse input that drives the pointer (used to show an auto-hidden cursor). */
+    private Runnable pointerInputListener;
 
     private void notifyHighlight(float viewX, float viewY) {
         if (clickHighlightListener != null) clickHighlightListener.onClickAt(viewX, viewY);
@@ -358,6 +360,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
                 && !event.isFromSource(InputDevice.SOURCE_MOUSE)) {
             return true; // consume without generating mouse events
         }
+        notifyPointerInput();
         if (isStylus) {
             return handleStylusEvent(event);
         } else if (isTouchscreenMode) {
@@ -2260,6 +2263,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
     public boolean onExternalMouseEvent(MotionEvent event) {
         boolean handled = false;
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
+            notifyPointerInput();
             int actionButton = event.getActionButton();
             switch (event.getAction()) {
                 case MotionEvent.ACTION_BUTTON_PRESS:
@@ -2339,6 +2343,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
 
     @Override // android.view.View.OnCapturedPointerListener
     public boolean onCapturedPointer(View view, MotionEvent event) {
+        notifyPointerInput();
         if (event.isFromSource(InputDevice.SOURCE_TOUCHPAD)) {
             return handleTouchpadEvent(event);
         }
@@ -2402,5 +2407,13 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
 
     public void setTouchscreenMouseDisabled(boolean disabled) {
         this.touchscreenMouseDisabled = disabled;
+    }
+
+    public void setPointerInputListener(Runnable listener) {
+        this.pointerInputListener = listener;
+    }
+
+    private void notifyPointerInput() {
+        if (pointerInputListener != null) pointerInputListener.run();
     }
 }

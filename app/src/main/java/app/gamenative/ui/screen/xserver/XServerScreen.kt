@@ -549,10 +549,15 @@ fun XServerScreen(
     }
     fun shouldShowMouseCursor(): Boolean {
         return !container.isDisableMouseInput &&
+            !CursorAutoHide.hidden &&
             (!container.isTouchscreenMode || currentGestureConfig.showCursorInTouchscreenMode)
     }
     fun applyMouseCursorVisibility() {
         xServerView?.renderer?.setCursorVisible(shouldShowMouseCursor())
+    }
+    DisposableEffect(Unit) {
+        CursorAutoHide.attach { applyMouseCursorVisibility() }
+        onDispose { CursorAutoHide.detach() }
     }
     val clickHighlightPoints = remember { mutableStateListOf<app.gamenative.ui.component.HighlightPoint>() }
     var debugGestureName by remember { mutableStateOf("") }
@@ -1519,6 +1524,7 @@ fun XServerScreen(
         } else {
             var handled = false
             if (isGamepad) {
+                CursorAutoHide.onControllerKey(it.event)
                 val winHandler = xServerView!!.getxServer().winHandler
                 if (it.event.action == KeyEvent.ACTION_DOWN && it.event.repeatCount == 0 &&
                     ControllerManager.getInstance().noteGamepadButton(it.event.device.id)
@@ -1575,6 +1581,7 @@ fun XServerScreen(
         } else {
             var handled = false
             if (isGamepad && it.event != null) {
+                CursorAutoHide.onControllerMotion(it.event)
                 val winHandler = xServerView!!.getxServer().winHandler
                 ControllerManager.getInstance().noteGamepadActivity(it.event)
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.device.id)
@@ -1909,6 +1916,7 @@ fun XServerScreen(
                 getxServer().renderer = renderer
                 PluviaApp.touchpadView = TouchpadView(context, getxServer(), PrefManager.getBoolean("capture_pointer_on_external_mouse", true))
                 PluviaApp.touchpadView?.setMoveCursorToTouchpoint(PrefManager.getBoolean("move_cursor_to_touchpoint", false))
+                PluviaApp.touchpadView?.setPointerInputListener { CursorAutoHide.onPointerInput() }
 
                 // Wire keyboard toggle callback for gesture "Show Keyboard" action.
                 // Mirrors the QuickMenuAction.KEYBOARD external-display routing
