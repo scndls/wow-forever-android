@@ -1677,6 +1677,11 @@ fun XServerScreen(
                         PluviaApp.inputControlsView?.setGyroForeground(true)
                         currentXServerView.onResume()
                     }
+                    // Still visible but not focused (split screen, the keyboard, an overlay): the game keeps
+                    // running under the "never" suspend policy, so keep drawing it. Ported from timokvamme 8bcd1fe.
+                    lifecycleState == Lifecycle.State.STARTED && PluviaApp.isNeverSuspendMode() -> {
+                        Timber.d("Keeping XServerView renderer running while visible: suspend policy=never")
+                    }
                     else -> {
                         Timber.d("Synchronizing XServerView renderer to current paused lifecycle state")
                         PluviaApp.inputControlsView?.setGyroForeground(false)
