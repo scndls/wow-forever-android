@@ -114,6 +114,9 @@ fun WoWForeverScreen(
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
+    var fullPlan by remember { mutableStateOf<WowFullDownload.Plan?>(null) }
+    var fullDownloading by remember { mutableStateOf(false) }
+    val fullCancel = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var appUpdate by remember { mutableStateOf<AppUpdater.Release?>(null) }
     var isDownloadingAppUpdate by remember { mutableStateOf(false) }
     var appUpdateProgress by remember { mutableFloatStateOf(0f) }
@@ -311,6 +314,66 @@ fun WoWForeverScreen(
                 Timber.e(e, "Add-on import failed")
                 if (e.isPermissionDenied()) denyStorageAccess()
                 errorMessage = "Add-on import failed: ${e.message}"
+            }
+        }
+    }
+
+    fun gb(bytes: Long) = "%.1f GB".format(bytes / 1e9)
+
+    // Full download: first works out what's missing (shown in a dialog), then downloads a batch or everything.
+    fun planFullDownload() {
+        if (isLaunching || isUpdating) return
+        isUpdating = true
+        errorMessage = null
+        updateStatusText = "Checking what's missing..."
+        scope.launch {
+            try {
+                fullPlan = withContext(Dispatchers.IO) {
+                    WowFullDownload.plan(File(gamePath)) { msg -> scope.launch(Dispatchers.Main) { updateStatusText = msg } }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Full download plan failed")
+                errorMessage = "Couldn't check the game files: ${e.message}"
+            } finally {
+                isUpdating = false
+            }
+        }
+    }
+
+    fun runFullDownload(plan: WowFullDownload.Plan, limit: Long?) {
+        fullPlan = null
+        fullCancel.set(false)
+        fullDownloading = true
+        isUpdating = true
+        updateStatusText = "Preparing download..."
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    WowFullDownload.download(File(gamePath), plan, limit, { fullCancel.get() }) { p ->
+                        scope.launch(Dispatchers.Main) {
+                            updateStatusText = if (p.totalBytes > 0) {
+                                "${p.phase} ${gb(p.doneBytes)} of ${gb(p.totalBytes)} (${p.doneBytes * 100 / p.totalBytes}%)"
+                            } else {
+                                p.phase
+                            }
+                        }
+                    }
+                }
+                SnackbarManager.show(
+                    "Downloaded ${gb(result.bytes)} (${result.files} files)" +
+                        (if (result.failedFiles > 0) ", ${result.failedFiles} failed" else "") +
+                        (if (result.remainingBytes > 0) ". ${gb(result.remainingBytes)} still missing" else ". The game is fully downloaded"),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Full download failed")
+                errorMessage = "Full download failed: ${e.message}"
+            } finally {
+                fullDownloading = false
+                isUpdating = false
             }
         }
     }
@@ -649,6 +712,17 @@ fun WoWForeverScreen(
                         color = Color(0xFFE2E8F0),
                         textAlign = TextAlign.Center
                     )
+                    if (fullDownloading) {
+                        Text(
+                            "Keep the launcher open. You can stop any time and continue later.",
+                            fontSize = 11.sp,
+                            color = WowSubtle,
+                            textAlign = TextAlign.Center,
+                        )
+                        TextButton(onClick = { fullCancel.set(true) }) {
+                            Text("Stop download", fontSize = 12.sp, color = WowMuted)
+                        }
+                    }
                 } else {
                     when {
                         !files.hasStorageAccess -> PrimaryButton(
@@ -718,6 +792,9 @@ fun WoWForeverScreen(
                             LinkButton("Add-on", Icons.Default.Extension, enabled = !isLaunching && !isUpdating) {
                                 addonPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
                             }
+                            LinkButton("Full download", Icons.Default.Download, enabled = !isLaunching && !isUpdating && files.hasStorageAccess) {
+                                planFullDownload()
+                            }
                         }
                         LinkButton(
                             text = "Login",
@@ -738,6 +815,48 @@ fun WoWForeverScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+
+    fullPlan?.let { plan ->
+        AlertDialog(
+            onDismissRequest = { fullPlan = null },
+            title = { Text(text = "Download The Full Game", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            text = {
+                Text(
+                    text = if (plan.files == 0) {
+                        "Everything is already on the phone (${plan.presentFiles} files). The game won't need to stream anything."
+                    } else {
+                        "${gb(plan.missingBytes)} in ${plan.files} files is still missing; the phone already has ${plan.presentFiles} files. " +
+                            "The game streams missing files while you play, which can stutter.\n\n" +
+                            "Close the game first and keep the launcher open while it downloads. The first time, try the test batch, " +
+                            "play a little, then download the rest. You can stop any time and continue later."
+                    },
+                    fontSize = 13.sp,
+                    color = Color(0xFFE2E8F0),
+                    lineHeight = 18.sp,
+                )
+            },
+            confirmButton = {
+                if (plan.files > 0) {
+                    Button(
+                        onClick = { runFullDownload(plan, null) },
+                        colors = ButtonDefaults.buttonColors(containerColor = WowBronze, contentColor = Color.White),
+                        shape = RoundedCornerShape(10.dp),
+                    ) { Text("Everything (${gb(plan.missingBytes)})") }
+                }
+            },
+            dismissButton = {
+                Row {
+                    if (plan.files > 0) {
+                        TextButton(onClick = { runFullDownload(plan, WowFullDownload.TEST_BATCH_BYTES) }) {
+                            Text("Test batch (300 MB)", color = WowMuted)
+                        }
+                    }
+                    TextButton(onClick = { fullPlan = null }) { Text(if (plan.files == 0) "OK" else "Cancel", color = WowMuted) }
+                }
+            },
+            containerColor = Color(0xFF0F1A2B),
+        )
     }
 
     if (showLoginDialog) {

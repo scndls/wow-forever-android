@@ -189,6 +189,33 @@ object WowClientDownloader {
         upsertBuildInfo(File(gameRoot, BUILD_INFO), target)
     }
 
+    /** Server access and configs of the installed build, for downloading the rest of the game (see WowFullDownload). */
+    internal class InstalledBuild(
+        val cdn: Cdn,
+        val buildConfig: Map<String, List<String>>,
+        val cdnConfig: Map<String, List<String>>,
+        /** Install tags from .build.info without the optional marker, e.g. Windows, arm64, EU, enUS, speech, text. */
+        val tags: Set<String>,
+    )
+
+    internal fun installedBuild(gameRoot: File): InstalledBuild {
+        val row = activeBuild(File(gameRoot, BUILD_INFO))
+        val cdn = Cdn(
+            servers = httpsServers(row["CDN Servers"].orEmpty().let(::splitHosts), row["CDN Hosts"].orEmpty().let(::splitHosts)),
+            path = row["CDN Path"].orEmpty().ifEmpty { DEFAULT_CDN_PATH },
+        )
+        fun config(key: String) = File(gameRoot, "Data/config/${key.substring(0, 2)}/${key.substring(2, 4)}/$key")
+            .takeIf { it.isFile }?.readBytes() ?: cdn.require("config", key)
+        return InstalledBuild(
+            cdn = cdn,
+            buildConfig = parseConfig(String(config(row.getValue("Build Key")))),
+            cdnConfig = parseConfig(String(config(row.getValue("CDN Key")))),
+            tags = row["Tags"].orEmpty().split(':', ' ').map { it.trimEnd('?') }.filter { it.isNotBlank() }.toSet(),
+        )
+    }
+
+    internal fun decodeBlte(data: ByteArray): ByteArray = blteDecode(data)
+
     fun download(gameRoot: File, region: String, onStatus: (String) -> Unit) {
         val row = activeBuild(File(gameRoot, BUILD_INFO))
         check(row["Product"] == TARGET_PRODUCT) { "Incompatible game product: ${row["Product"]}. Expected $TARGET_PRODUCT." }
@@ -348,7 +375,7 @@ object WowClientDownloader {
     }
 
     /** [servers] are HTTPS base URLs, e.g. "https://level3.ssl.blizzard.com". */
-    private class Cdn(val servers: List<String>, val path: String) {
+    internal class Cdn(val servers: List<String>, val path: String) {
         // Servers whose TLS handshake failed, e.g. Korea's blizzard.gcdn.cloudn.co.kr with its expired self-signed
         // certificate, are skipped from then on instead of being retried for every file.
         private val untrusted = ConcurrentHashMap.newKeySet<String>()
