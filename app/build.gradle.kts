@@ -19,6 +19,10 @@ val keystoreProperties: Properties? = if (keystorePropertiesFile.exists()) {
     }
 } else null
 
+// Optional: `-PappIdSuffix=.dev` builds an app that installs next to the official one,
+// with its own data and its own launcher label ("WoW Forever dev").
+val appIdSuffix: String? = providers.gradleProperty("appIdSuffix").orNull?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "app.gamenative"
     compileSdk = 36
@@ -39,10 +43,13 @@ android {
 
     defaultConfig {
         applicationId = "app.wowforever"
+        if (appIdSuffix != null) applicationIdSuffix = appIdSuffix
 
         minSdk = 26
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
+        manifestPlaceholders["appLabel"] =
+            if (appIdSuffix != null) "WoW Forever ${appIdSuffix.trimStart('.')}" else "@string/app_name"
         buildConfigField("boolean", "XR_BUILD", "false")
 
         versionCode = 242
